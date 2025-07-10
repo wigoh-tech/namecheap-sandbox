@@ -3,7 +3,9 @@ package main
 import (
 	"fmt"
 	"log"
+	"namecheap-microservice/service"
 	"net/http"
+	"time"
 
 	"namecheap-microservice/config"
 	database "namecheap-microservice/database"
@@ -20,6 +22,13 @@ func main() {
 	}
 
 	database.ConnectDB()
+
+	go func() {
+		for {
+			service.UnrevokeOldDomains()
+			time.Sleep(1 * time.Minute)
+		}
+	}()
 
 	routes.SetupRoutes()
 

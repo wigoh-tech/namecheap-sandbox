@@ -13,22 +13,23 @@ import (
 // GetDomainInfo retrieves domain info using the Namecheap SDK
 func CheckDomain(client *namecheap.Client, domain string) (bool, error) {
 	params := map[string]string{
-		"Command": "namecheap.domains.check",
-		// "ApiUser":    config.ApiUser,
-		// "ApiKey":     config.ApiKey,
-		// "Username":   config.ApiUser,
-		// "ClientIp":   config.ClientIp,
+		"Command":    "namecheap.domains.check",
 		"DomainList": domain,
 	}
+
 	fmt.Printf("👤 Loaded API User: '%s'\n", config.ApiUser)
+	fmt.Printf("🌐 Checking domain: %s\n", domain)
+	fmt.Printf("📤 Sending request with params: %+v\n", params)
 
 	var result struct {
 		XMLName         xml.Name `xml:"ApiResponse"`
 		Status          string   `xml:"Status,attr"`
 		CommandResponse struct {
 			DomainCheckResult struct {
-				Available string `xml:"Available,attr"` // "true" or "false"
-				Domain    string `xml:"Domain,attr"`
+				Available     string `xml:"Available,attr"`
+				Domain        string `xml:"Domain,attr"`
+				IsPremiumName string `xml:"IsPremiumName,attr"`
+				IsRestricted  string `xml:"IsRestricted,attr"`
 			} `xml:"DomainCheckResult"`
 		} `xml:"CommandResponse"`
 		Errors struct {
@@ -36,32 +37,50 @@ func CheckDomain(client *namecheap.Client, domain string) (bool, error) {
 		} `xml:"Errors"`
 	}
 
-	// Log: BEFORE API call
-	fmt.Printf("🌐 Checking domain: %s\n", domain)              //test1
-	fmt.Printf("📤 Sending request with params: %+v\n", params) //test 2
-
 	_, err := client.DoXML(params, &result)
 	if err != nil {
-		fmt.Printf("❌ API call failed: %v\n", err) //test 3
+		fmt.Printf("❌ API call failed: %v\n", err)
 		return false, fmt.Errorf("API error: %v", err)
 	}
-	// rawResponse, _ := xml.MarshalIndent(result, "", "  ")
-	//test 4
 
-	// Log: AFTER API call
-	fmt.Printf("📥 Raw API response Status: %s\n", result.Status) //test 5
-	fmt.Printf("✅ Domain: %s | Available: %s\n",                 //test 6
-		result.CommandResponse.DomainCheckResult.Domain,
-		result.CommandResponse.DomainCheckResult.Available,
-	)
+	// Pretty print raw XML response
+	rawResponse, _ := xml.MarshalIndent(result, "", "  ")
+	fmt.Println("🧾 Raw API Response:\n", string(rawResponse))
 
-	if result.Status == "ERROR" {
-		fmt.Printf("⚠️ Namecheap error: %s\n", result.Errors.Error)
+	if result.Errors.Error != "" {
+		fmt.Println("⚠️ Namecheap internal error:", result.Errors.Error)
 		return false, fmt.Errorf("Namecheap error: %s", result.Errors.Error)
 	}
 
-	available := result.CommandResponse.DomainCheckResult.Available == "true"
-	fmt.Printf("🔎 Final check: Is domain available? %v\n", available)
+	// Extract result
+	d := result.CommandResponse.DomainCheckResult
+
+	// Post-call status logs
+	fmt.Printf("📥 API Response Status: %s\n", result.Status)
+	fmt.Printf("✅ Domain Checked: %s\n", d.Domain)
+	fmt.Printf("🟢 Available: %s | ⚠️ Premium: %s | ⛔ Restricted: %s\n",
+		d.Available, d.IsPremiumName, d.IsRestricted,
+	)
+
+	// Handle errors from Namecheap
+	if result.Status == "ERROR" && result.Errors.Error != "" {
+		fmt.Printf("🚫 Namecheap Error: %s\n", result.Errors.Error)
+		return false, fmt.Errorf("Namecheap error: %s", result.Errors.Error)
+	}
+
+	// Handle restricted domains
+	if d.IsRestricted == "true" {
+		fmt.Println("⛔ Domain is restricted or banned.")
+		return false, fmt.Errorf("domain is restricted or banned by registry")
+	}
+
+	// Optional: warn about premium names
+	if d.IsPremiumName == "true" {
+		fmt.Println("⚠️ Note: This is a premium domain. Higher cost may apply.")
+	}
+
+	available := d.Available == "true"
+	fmt.Printf("🔍 Final Availability: %v\n", available)
 
 	return available, nil
 }

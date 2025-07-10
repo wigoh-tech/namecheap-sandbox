@@ -1,13 +1,15 @@
 import { useState } from "react";
+import { useEffect } from "react";
 
 type Props = {
   domain: string;
+  onSuccess: () => void;
 };
 
-export default function BuyDomainForm({ domain }: Props) {
-  const BASE_PRICE = 1000;
-  const TAX = BASE_PRICE * 0.3;
-  const TOTAL = BASE_PRICE + TAX;
+
+export default function BuyDomainForm({ domain,onSuccess }: Props) {
+  const [price, setPrice] = useState({ base: 0, tax: 0, total: 0 });
+
 
   const [formData, setFormData] = useState({
     firstName: "",
@@ -22,6 +24,8 @@ export default function BuyDomainForm({ domain }: Props) {
 
   const [status, setStatus] = useState("");
 
+
+
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
@@ -33,12 +37,20 @@ export default function BuyDomainForm({ domain }: Props) {
       const res = await fetch("http://localhost:8080/buy-domain", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ domain, ...formData }),
+        body: JSON.stringify({
+          domain,
+  ...formData,
+  price: price.base,
+  tax: price.tax,
+  total: price.total,
+}),
+
       });
 
       const data = await res.json();
       if (res.ok) {
         setStatus(`✅ Domain "${data.domain}" purchased successfully!`);
+        onSuccess();
       } else {
         setStatus(`❌ ${data.error || "Purchase failed."}`);
       }
@@ -66,7 +78,7 @@ export default function BuyDomainForm({ domain }: Props) {
         className="bg-green-600 text-white py-2 px-6 rounded hover:bg-green-700 transition"
         onClick={handleBuy}
       >
-        Buy for ₹{TOTAL.toFixed(2)}
+        Buy for ₹{price.total.toFixed(2)}
       </button>
 
       {status && <p className="mt-4 text-sm text-gray-700">{status}</p>}

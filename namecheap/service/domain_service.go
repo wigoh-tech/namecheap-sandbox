@@ -4,8 +4,7 @@ import (
 	"fmt"
 	"namecheap-microservice/database"
 	"namecheap-microservice/model"
-
-	"github.com/namecheap/go-namecheap-sdk/v2/namecheap"
+	"time"
 )
 
 func RevokeDomain(domainName string) error {
@@ -14,39 +13,33 @@ func RevokeDomain(domainName string) error {
 		return fmt.Errorf("domain not found")
 	}
 
+	now := time.Now()
 	domain.Revoked = true
+	domain.RevokedAt = &now
+
 	if err := database.DB.Save(&domain).Error; err != nil {
 		return fmt.Errorf("failed to revoke domain")
 	}
 	return nil
 }
 
-func MoveDomain(client *namecheap.Client, domainName string, newARecord string, newCNAME string) error {
-	// Step 1: Update DNS on Namecheap
-	if err := SetDNSRecords(client, domainName, newARecord); err != nil {
-		return fmt.Errorf("dns update failed: %v", err)
+func UnrevokeOldDomains() {
+	threshold := time.Now().Add(-1 * time.Minute)
+
+	var domains []model.DomainPurchase
+	err := database.DB.Where("revoked = ? AND revoked_at < ?", true, threshold).Find(&domains).Error
+	if err != nil {
+		fmt.Println("Failed to query old revoked domains:", err)
+		return
 	}
 
-	// Step 2: Fetch the domain purchase record
-	var domain model.DomainPurchase
-	if err := database.DB.First(&domain, "name = ?", domainName).Error; err != nil {
-		return fmt.Errorf("domain not found")
+	for _, d := range domains {
+		d.Revoked = false
+		d.RevokedAt = nil
+		if err := database.DB.Save(&d).Error; err != nil {
+			fmt.Println("Failed to unrevoke domain:", d.Name)
+		} else {
+			fmt.Println("✅ Domain made available again:", d.Name)
+		}
 	}
-
-	// Step 3: Fetch its linked DNS record
-	var dns model.DNSRecord
-	if err := database.DB.First(&dns, "domain_purchase_id = ?", domain.ID).Error; err != nil {
-		return fmt.Errorf("dns record not found")
-	}
-
-	// Step 4: Update values
-	dns.ARecord = newARecord
-	dns.CName = newCNAME
-
-	// Step 5: Save the updated DNS record
-	if err := database.DB.Save(&dns).Error; err != nil {
-		return fmt.Errorf("failed to update dns record")
-	}
-
-	return nil
 }
