@@ -19,37 +19,37 @@ const EditDNSModal: React.FC = () => {
 
   const handleClose = () => setVisible(false);
 
-  const handleUpdate = async () => {
-    setLoading(true);
-    try {
-      const body: any = {
-        domain: form.domain,
-        recordType: form.recordType,
-      };
+const handleUpdate = async () => {
+  setLoading(true);
+  try {
+    const body = {
+      domain: form.domain,
+      recordType: form.recordType,
+      aRecord: form.recordType === "A" ? form.aRecord : "",
+      cName: form.recordType === "CNAME" ? form.cName : "",
+    };
 
-      if (form.recordType === "A") body.aRecord = form.aRecord;
-      if (form.recordType === "CNAME") body.cName = form.cName;
+    const res = await fetch("http://localhost:8080/api/update-dns", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
 
-      const res = await fetch("http://localhost:8080/api/update-dns", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-
-      const result = await res.json();
-      if (res.ok) {
-        alert("✅ DNS updated");
-        window.dispatchEvent(new CustomEvent("refreshDomains"));
-        handleClose();
-      } else {
-        alert("❌ Update failed: " + result.error);
-      }
-    } catch (err) {
-      alert("❌ Network error");
-    } finally {
-      setLoading(false);
+    const result = await res.json();
+    if (res.ok) {
+      alert("✅ DNS updated");
+      window.dispatchEvent(new CustomEvent("refreshDomains"));
+      handleClose();
+    } else {
+      alert("❌ Update failed: " + result.error);
     }
-  };
+  } catch (err) {
+    alert("❌ Network error");
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -88,6 +88,12 @@ const EditDNSModal: React.FC = () => {
         >
           <option value="A">A Record</option>
           <option value="CNAME">CNAME Record</option>
+           <option value="AAAA">AAAA Record</option>
+           <option value="TXT">TXT Record</option>
+           <option value="DYNAMIC">A + Dynamic DNS</option>
+           <option value="ALIAS">ALIAS Record</option> 
+           <option value="URL">URL Redirect</option> 
+           <option value="CAA">CAA Record</option>
           {/* You can add more later like MX, NS, etc */}
         </select>
 

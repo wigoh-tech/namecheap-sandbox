@@ -13,4 +13,8 @@ type DomainPurchaseRequest struct {
 	Price      float64 `json:"price"`   // Base price of the domain
 	Tax        float64 `json:"tax"`     // Tax amount
 	Total      float64 `json:"total"`   // Total amount after tax
+
+	// DNS records
+	ARecord string `json:"aRecord"` // A record for the domain
+	CName   string `json:"cName"`   // CNAME record for the domain
 }

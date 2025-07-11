@@ -72,56 +72,36 @@ func BuyDomainHandler(w http.ResponseWriter, r *http.Request) {
 
 	client := service.NewNamecheapClient()
 
+	// 🔁 Step 1: Use wholesale price in USD from Namecheap
+	wholesaleUSD, err := service.GetWholesalePrice(client, req.Domain)
+	if err != nil {
+		http.Error(w, `{"error": "failed to fetch wholesale price"}`, http.StatusInternalServerError)
+		return
+	}
+
+	// 🔁 Step 2: Convert USD to INR (you can later use a live exchange rate API)
+	const exchangeRate = 83.0
+	retailINR := wholesaleUSD * exchangeRate
+
+	// 💰 Step 3: Add 18% GST
+	tax := retailINR * 0.18
+	total := retailINR + tax
+
+	// 📦 Step 4: Fill price info into req for DB save
+	req.Price = retailINR
+	req.Tax = tax
+	req.Total = total
+
 	success, domainName, err := service.BuyDomain(client, req)
 	if err != nil {
 		fmt.Println("BuyDomain error:", err)
 		http.Error(w, fmt.Sprintf(`{"error": "%s"}`, err.Error()), http.StatusInternalServerError)
 		return
 	}
+
 	fmt.Println("✅ Domain purchase completed successfully:", domainName)
 
-	if success {
-		// 🔁 Step 1: Use wholesale price in USD from Namecheap
-		wholesaleUSD, err := service.GetWholesalePrice(client, req.Domain)
-		if err != nil {
-			http.Error(w, `{"error": "failed to fetch wholesale price"}`, http.StatusInternalServerError)
-			return
-		}
-
-		// 🔁 Step 2: Convert USD to INR (you can later use a live exchange rate API)
-		const exchangeRate = 83.0
-		retailINR := wholesaleUSD * exchangeRate
-
-		// 💰 Step 3: Add 18% GST
-		tax := retailINR * 0.18
-		total := retailINR + tax
-
-		// ✅ Step 4: Save to database
-		domain := model.DomainPurchase{
-			Name:              domainName,
-			Purchased:         true,
-			Customer:          req.Email,
-			WholesalePriceUSD: wholesaleUSD,
-
-			RetailPriceINR: retailINR,
-			Tax:            tax,
-			Total:          total,
-		}
-
-		dns := model.DNSRecord{
-			ARecord: "82.25.106.75",
-			CName:   "indigo-spoonbill-233511.hostingersite.com",
-		}
-
-		if err := database.SaveDomainWithDNS(domain, dns); err != nil {
-			fmt.Println("DB save error:", err)
-			http.Error(w, `{"error": "failed to save domain and DNS info"}`, http.StatusInternalServerError)
-			return
-		}
-
-		fmt.Println("✅ Domain saved to database successfully:", domain.Name)
-	}
-
+	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"success": success,
 		"domain":  domainName,
@@ -200,24 +180,49 @@ func RevokeDomainHandler(w http.ResponseWriter, r *http.Request) {
 
 func UpdateDNSHandler(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Domain  string `json:"domain"`
-		ARecord string `json:"aRecord"`
-		CName   string `json:"cName"`
+		Domain     string `json:"domain"`
+		ARecord    string `json:"aRecord"`
+		CName      string `json:"cName"`
+		RecordType string `json:"recordType"`
 	}
+	fmt.Println("🚀 /update-dns endpoint hit")
 
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Domain == "" || body.ARecord == "" {
-		http.Error(w, `{"error": "Invalid input"}`, http.StatusBadRequest)
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Domain == "" || body.RecordType == "" {
+		http.Error(w, `{"error": "Invalid input: missing domain or record type"}`, http.StatusBadRequest)
 		return
 	}
 
-	// Update Namecheap DNS
 	client := service.NewNamecheapClient()
-	if err := service.SetDNSRecords(client, body.Domain, body.ARecord); err != nil {
-		http.Error(w, `{"error": "Failed to update DNS on Namecheap"}`, http.StatusInternalServerError)
+
+	switch body.RecordType {
+	case "A":
+		if body.ARecord == "" {
+			http.Error(w, `{"error": "Missing A record"}`, http.StatusBadRequest)
+			return
+		}
+		err := service.SetDNSRecords(client, body.Domain, body.ARecord, "")
+		if err != nil {
+			fmt.Println("SetDNSRecords A error:", err)
+			http.Error(w, fmt.Sprintf(`{"error": "Failed to update A record: %s"}`, err.Error()), http.StatusInternalServerError)
+			return
+		}
+	case "CNAME":
+		if body.CName == "" {
+			http.Error(w, `{"error": "Missing CNAME record"}`, http.StatusBadRequest)
+			return
+		}
+		err := service.SetDNSRecords(client, body.Domain, "", body.CName)
+		if err != nil {
+			fmt.Println("SetDNSRecords CNAME error:", err)
+			http.Error(w, fmt.Sprintf(`{"error": "Failed to update CNAME: %s"}`, err.Error()), http.StatusInternalServerError)
+			return
+		}
+	default:
+		http.Error(w, `{"error": "Unsupported record type"}`, http.StatusBadRequest)
 		return
 	}
 
-	// Update database
+	// Update database with both values, but only the valid one will be changed
 	if err := database.UpdateDNSInDB(body.Domain, body.ARecord, body.CName); err != nil {
 		http.Error(w, `{"error": "Failed to update DNS in DB"}`, http.StatusInternalServerError)
 		return

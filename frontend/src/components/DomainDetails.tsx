@@ -2,29 +2,11 @@ import { useEffect, useState } from "react";
 
 type Props = {
   domain: string;
+  price: { base: number; tax: number; total: number };
   onBuyClick: () => void;
 };
 
-export default function DomainDetails({ domain, onBuyClick }: Props) {
-  const [price, setPrice] = useState({ base: 0, tax: 0, total: 0 });
-
-  useEffect(() => {
-    const fetchPrice = async () => {
-      try {
-        const res = await fetch(`http://localhost:8080/domain-price?domain=${domain}`);
-        const data = await res.json();
-        setPrice(data);
-      } catch (err) {
-        console.error("Failed to fetch price", err);
-        setPrice({ base: 1000, tax: 300, total: 1300 }); // fallback
-      }
-    };
-
-    if (domain) {
-      fetchPrice();
-    }
-  }, [domain]);
-
+export default function DomainDetails({ domain, price, onBuyClick }: Props) {
   return (
     <div className="bg-white border p-4 rounded-lg shadow space-y-3">
       <h2 className="text-xl font-semibold text-green-600">Domain Available 🎉</h2>

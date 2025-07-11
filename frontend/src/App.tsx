@@ -7,7 +7,22 @@ import EditDNSModal from "./components/EditDNSModal";
 
 export default function App() {
   const [domain, setDomain] = useState("");
-  const [step, setStep] = useState(1); // 1: Search, 2: Details, 3: Form, 4: List
+  const [step, setStep] = useState(1); // 1: Search, 2: Details, 3: Form
+  const [price, setPrice] = useState({ base: 0, tax: 0, total: 0 });
+
+  const handleAvailable = async (domain: string) => {
+    setDomain(domain);
+    setStep(2);
+
+    try {
+      const res = await fetch(`http://localhost:8080/domain-price?domain=${domain}`);
+      const data = await res.json();
+      setPrice(data);
+    } catch (err) {
+      console.error("❌ Failed to fetch domain price:", err);
+      setPrice({ base: 1000, tax: 300, total: 1300 }); // fallback
+    }
+  };
 
   return (
     <div className="min-h-screen w-full bg-gray-100 p-6">
@@ -18,17 +33,13 @@ export default function App() {
           <p className="text-gray-600 text-sm mb-6">Search, View, and Purchase your domain</p>
 
           {step === 1 && (
-            <DomainSearch
-              onAvailable={(domain) => {
-                setDomain(domain);
-                setStep(2);
-              }}
-            />
+            <DomainSearch onAvailable={handleAvailable} />
           )}
 
           {step === 2 && (
             <DomainDetails
               domain={domain}
+              price={price}
               onBuyClick={() => setStep(3)}
             />
           )}
@@ -36,10 +47,11 @@ export default function App() {
           {step === 3 && (
             <BuyDomainForm
               domain={domain}
+              price={price}
               onSuccess={() => {
                 alert("✅ Domain bought!");
-                setStep(1); // Go back to search
-                window.dispatchEvent(new Event("refreshDomains")); // Notify list
+                setStep(1);
+                window.dispatchEvent(new Event("refreshDomains"));
               }}
             />
           )}

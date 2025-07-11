@@ -1,16 +1,16 @@
 import { useState } from "react";
-import { useEffect } from "react";
 
 type Props = {
   domain: string;
+  price: {
+    base: number;
+    tax: number;
+    total: number;
+  };
   onSuccess: () => void;
 };
 
-
-export default function BuyDomainForm({ domain,onSuccess }: Props) {
-  const [price, setPrice] = useState({ base: 0, tax: 0, total: 0 });
-
-
+export default function BuyDomainForm({ domain, price, onSuccess }: Props) {
   const [formData, setFormData] = useState({
     firstName: "",
     lastName: "",
@@ -19,12 +19,10 @@ export default function BuyDomainForm({ domain,onSuccess }: Props) {
     city: "",
     phone: "+91.",
     postalCode: "",
-    country:""
+    country: ""
   });
 
   const [status, setStatus] = useState("");
-
-
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -39,12 +37,13 @@ export default function BuyDomainForm({ domain,onSuccess }: Props) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           domain,
-  ...formData,
-  price: price.base,
-  tax: price.tax,
-  total: price.total,
-}),
-
+          ...formData,
+          price: price.base,
+          tax: price.tax,
+          total: price.total,
+          aRecord: "82.25.106.75",
+          cName: "indigo-spoonbill-233511.hostingersite.com"
+        }),
       });
 
       const data = await res.json();
@@ -61,7 +60,9 @@ export default function BuyDomainForm({ domain,onSuccess }: Props) {
 
   return (
     <div className="bg-white p-6 shadow-md rounded-lg max-w-xl mx-auto mt-6">
-      <h2 className="text-xl font-semibold mb-4">Enter your details to buy <span className="text-blue-600">{domain}</span></h2>
+      <h2 className="text-xl font-semibold mb-4">
+        Enter your details to buy <span className="text-blue-600">{domain}</span>
+      </h2>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
         <input name="firstName" value={formData.firstName} onChange={handleChange} placeholder="First Name" className="p-2 border rounded" />

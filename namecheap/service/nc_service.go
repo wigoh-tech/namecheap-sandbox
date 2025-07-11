@@ -85,31 +85,55 @@ func CheckDomain(client *namecheap.Client, domain string) (bool, error) {
 	return available, nil
 }
 
-func SetDNSRecords(client *namecheap.Client, domain string, ip string) error {
+func SetDNSRecords(client *namecheap.Client, domain string, aRecord string, cname string) error {
 	parts := strings.SplitN(domain, ".", 2)
 	if len(parts) != 2 {
 		return fmt.Errorf("invalid domain format: %s", domain)
 	}
 	sld := parts[0]
 	tld := parts[1]
+
 	params := map[string]string{
-		"Command":     "namecheap.domains.dns.setHosts",
-		"ApiUser":     config.ApiUser,
-		"ApiKey":      config.ApiKey,
-		"Username":    config.ApiUser,
-		"ClientIp":    config.ClientIp,
-		"SLD":         sld,
-		"TLD":         tld,
-		"DomainName":  domain,
-		"HostName1":   "@",
-		"RecordType1": "A",
-		"Address1":    "82.25.106.75",
-		"TTL1":        "1800",
-		"HostName2":   "www",
-		"RecordType2": "CNAME",
-		"Address2":    "indigo-spoonbill-233511.hostingersite.com",
-		"TTL2":        "1800",
+		"Command":  "namecheap.domains.dns.setHosts",
+		"ApiUser":  config.ApiUser,
+		"ApiKey":   config.ApiKey,
+		"Username": config.ApiUser,
+		"ClientIp": config.ClientIp,
+		"SLD":      sld,
+		"TLD":      tld,
 	}
+
+	recordIndex := 1
+	addedRecord := false
+
+	if strings.TrimSpace(aRecord) != "" {
+		if !strings.Contains(aRecord, ".") {
+			return fmt.Errorf("invalid A record IP address: %s", aRecord)
+		}
+		params[fmt.Sprintf("HostName%d", recordIndex)] = "@"
+		params[fmt.Sprintf("RecordType%d", recordIndex)] = "A"
+		params[fmt.Sprintf("Address%d", recordIndex)] = aRecord
+		params[fmt.Sprintf("TTL%d", recordIndex)] = "1800"
+		recordIndex++
+		addedRecord = true
+	}
+
+	if strings.TrimSpace(cname) != "" {
+		if !strings.Contains(cname, ".") {
+			return fmt.Errorf("invalid CNAME host: %s", cname)
+		}
+		params[fmt.Sprintf("HostName%d", recordIndex)] = "www"
+		params[fmt.Sprintf("RecordType%d", recordIndex)] = "CNAME"
+		params[fmt.Sprintf("Address%d", recordIndex)] = cname
+		params[fmt.Sprintf("TTL%d", recordIndex)] = "1800"
+		addedRecord = true
+	}
+
+	if !addedRecord {
+		return fmt.Errorf("no valid records to update (A: '%s', CNAME: '%s')", aRecord, cname)
+	}
+
+	fmt.Println("🔧 DNS Params:", params)
 
 	var response struct {
 		XMLName xml.Name `xml:"ApiResponse"`
