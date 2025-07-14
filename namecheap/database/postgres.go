@@ -53,27 +53,52 @@ func SaveDomainWithDNS(domain model.DomainPurchase, dns model.DNSRecord) error {
 }
 
 // UpdateDNSInDB updates A record and CNAME in the dns_records table for a domain
-func UpdateDNSInDB(domainName, aRecord, cName string) error {
+func UpdateDNSInDB(domainName string, newRecords []model.DNSRecord) error {
 	var domain model.DomainPurchase
 
-	// Step 1: Find the domain by name
+	// Find domain
 	if err := DB.Where("name = ?", domainName).First(&domain).Error; err != nil {
 		return fmt.Errorf("domain not found: %w", err)
 	}
 
-	// Step 2: Update DNS record where foreign key matches
-	var dns model.DNSRecord
-	if err := DB.Where("domain_purchase_id = ?", domain.ID).First(&dns).Error; err != nil {
-		return fmt.Errorf("DNS record not found: %w", err)
+	// Delete existing DNS records for this domain
+	if err := DB.Where("domain_purchase_id = ?", domain.ID).Delete(&model.DNSRecord{}).Error; err != nil {
+		return fmt.Errorf("failed to clear old DNS records: %w", err)
 	}
 
-	dns.ARecord = aRecord
-	dns.CName = cName
+	// Assign DomainPurchaseID and insert new records
+	for i := range newRecords {
+		newRecords[i].DomainPurchaseID = domain.ID
+	}
 
-	// Save updates
-	if err := DB.Save(&dns).Error; err != nil {
-		return fmt.Errorf("failed to update DNS: %w", err)
+	if err := DB.Create(&newRecords).Error; err != nil {
+		return fmt.Errorf("failed to save new DNS records: %w", err)
 	}
 
 	return nil
+}
+func GetDNSInputRecords(domain string) ([]model.DNSInputRecord, error) {
+	var domainObj model.DomainPurchase
+	if err := DB.Where("name = ?", domain).First(&domainObj).Error; err != nil {
+		return nil, err
+	}
+
+	var records []model.DNSRecord
+	if err := DB.Where("domain_purchase_id = ?", domainObj.ID).Find(&records).Error; err != nil {
+		return nil, err
+	}
+
+	var input []model.DNSInputRecord
+	for _, r := range records {
+		input = append(input, model.DNSInputRecord{
+			Type:   r.Type,
+			Host:   r.Host,
+			Value:  r.Value,
+			TTL:    r.TTL,
+			MXPref: r.MXPref,
+			Flag:   r.Flag,
+			Tag:    r.Tag,
+		})
+	}
+	return input, nil
 }

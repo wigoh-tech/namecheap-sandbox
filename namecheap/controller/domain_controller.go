@@ -139,7 +139,7 @@ func GetDomainPriceHandler(w http.ResponseWriter, r *http.Request) {
 }
 func ListDomains(w http.ResponseWriter, r *http.Request) {
 	var domains []model.DomainPurchase
-	if err := database.DB.Preload("DNSRecord").Find(&domains).Error; err != nil {
+	if err := database.DB.Preload("DNSRecords").Find(&domains).Error; err != nil {
 		http.Error(w, `{"error": "failed to fetch domains"}`, http.StatusInternalServerError)
 		return
 	}
@@ -179,57 +179,118 @@ func RevokeDomainHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func UpdateDNSHandler(w http.ResponseWriter, r *http.Request) {
-	var body struct {
+	type reqBody struct {
 		Domain     string `json:"domain"`
-		ARecord    string `json:"aRecord"`
-		CName      string `json:"cName"`
+		Host       string `json:"host"`
+		Value      string `json:"value"`
 		RecordType string `json:"recordType"`
+		TTL        int    `json:"ttl"` // optional
 	}
-	fmt.Println("🚀 /update-dns endpoint hit")
 
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Domain == "" || body.RecordType == "" {
-		http.Error(w, `{"error": "Invalid input: missing domain or record type"}`, http.StatusBadRequest)
+	var b reqBody
+	if err := json.NewDecoder(r.Body).Decode(&b); err != nil ||
+		b.Domain == "" || b.Host == "" || b.Value == "" || b.RecordType == "" {
+		http.Error(w, `{"error":"invalid input"}`, http.StatusBadRequest)
 		return
 	}
 
+	if b.TTL == 0 {
+		b.TTL = 1800 // default TTL
+	}
+
+	// Step 1: Call Namecheap to update DNS
 	client := service.NewNamecheapClient()
+	record := model.DNSInputRecord{
+		Host:  b.Host,
+		Type:  b.RecordType,
+		Value: b.Value,
+		TTL:   b.TTL,
+	}
+	if err := service.SetDNSRecordsAdvanced(client, b.Domain, []model.DNSInputRecord{record}); err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
+		return
+	}
+	dbRecord := model.DNSRecord{
+		Type:  b.RecordType,
+		Host:  b.Host,
+		Value: b.Value,
+		TTL:   b.TTL,
+	}
 
-	switch body.RecordType {
-	case "A":
-		if body.ARecord == "" {
-			http.Error(w, `{"error": "Missing A record"}`, http.StatusBadRequest)
-			return
-		}
-		err := service.SetDNSRecords(client, body.Domain, body.ARecord, "")
-		if err != nil {
-			fmt.Println("SetDNSRecords A error:", err)
-			http.Error(w, fmt.Sprintf(`{"error": "Failed to update A record: %s"}`, err.Error()), http.StatusInternalServerError)
-			return
-		}
-	case "CNAME":
-		if body.CName == "" {
-			http.Error(w, `{"error": "Missing CNAME record"}`, http.StatusBadRequest)
-			return
-		}
-		err := service.SetDNSRecords(client, body.Domain, "", body.CName)
-		if err != nil {
-			fmt.Println("SetDNSRecords CNAME error:", err)
-			http.Error(w, fmt.Sprintf(`{"error": "Failed to update CNAME: %s"}`, err.Error()), http.StatusInternalServerError)
-			return
-		}
-	default:
-		http.Error(w, `{"error": "Unsupported record type"}`, http.StatusBadRequest)
+	// Step 2: Update in database
+	if err := database.UpdateDNSInDB(b.Domain, []model.DNSRecord{dbRecord}); err != nil {
+		http.Error(w, `{"error":"failed to update DB"}`, http.StatusInternalServerError)
 		return
 	}
 
-	// Update database with both values, but only the valid one will be changed
-	if err := database.UpdateDNSInDB(body.Domain, body.ARecord, body.CName); err != nil {
-		http.Error(w, `{"error": "Failed to update DNS in DB"}`, http.StatusInternalServerError)
-		return
-	}
-
-	json.NewEncoder(w).Encode(map[string]any{
-		"success": true,
+	json.NewEncoder(w).Encode(map[string]string{
+		"success": "true",
 		"message": "DNS updated successfully",
+	})
+}
+func AddDNSRecordHandler(w http.ResponseWriter, r *http.Request) {
+	type reqBody struct {
+		Domain     string `json:"domain"`
+		Host       string `json:"host"`
+		Value      string `json:"value"`
+		RecordType string `json:"recordType"`
+		TTL        int    `json:"ttl"`
+	}
+
+	var b reqBody
+	if err := json.NewDecoder(r.Body).Decode(&b); err != nil ||
+		b.Domain == "" || b.Host == "" || b.Value == "" || b.RecordType == "" {
+		http.Error(w, `{"error":"invalid input"}`, http.StatusBadRequest)
+		return
+	}
+	if b.TTL == 0 {
+		b.TTL = 1800
+	}
+
+	newRec := model.DNSInputRecord{
+		Type:  b.RecordType,
+		Host:  b.Host,
+		Value: b.Value,
+		TTL:   b.TTL,
+	}
+
+	// 1. Get existing records from DB
+	existing, err := database.GetDNSInputRecords(b.Domain)
+	if err != nil {
+		http.Error(w, `{"error":"failed to fetch existing records"}`, http.StatusInternalServerError)
+		return
+	}
+
+	// 2. Append new record
+	all := append(existing, newRec)
+
+	// 3. Update Namecheap
+	client := service.NewNamecheapClient()
+	if err := service.SetDNSRecordsAdvanced(client, b.Domain, all); err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
+		return
+	}
+
+	// 4. Update DB
+	var dbRecords []model.DNSRecord
+	for _, r := range all {
+		dbRecords = append(dbRecords, model.DNSRecord{
+			Type:   r.Type,
+			Host:   r.Host,
+			Value:  r.Value,
+			TTL:    r.TTL,
+			MXPref: r.MXPref,
+			Flag:   r.Flag,
+			Tag:    r.Tag,
+		})
+	}
+	if err := database.UpdateDNSInDB(b.Domain, dbRecords); err != nil {
+		http.Error(w, `{"error":"failed to update DB"}`, http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]string{
+		"success": "true",
+		"message": "DNS record added successfully",
 	})
 }

@@ -14,4 +14,6 @@ func SetupRoutes() {
 	http.HandleFunc("/revoke-domain", middleware.CORSMiddleware(controller.RevokeDomainHandler))
 
 	http.HandleFunc(("/api/update-dns"), middleware.CORSMiddleware(controller.UpdateDNSHandler))
+	http.HandleFunc("/api/add-dns-record", controller.AddDNSRecordHandler)
+
 }

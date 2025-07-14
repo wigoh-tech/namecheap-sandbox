@@ -32,6 +32,7 @@ func BuyDomain(client *namecheap.Client, req model.DomainPurchaseRequest) (bool,
 		"RegistrantEmailAddress":  req.Email,
 	}
 
+	// Fill other roles: Tech, Admin, AuxBilling
 	for _, role := range []string{"Tech", "Admin", "AuxBilling"} {
 		params[role+"FirstName"] = req.FirstName
 		params[role+"LastName"] = req.LastName
@@ -44,6 +45,7 @@ func BuyDomain(client *namecheap.Client, req model.DomainPurchaseRequest) (bool,
 		params[role+"EmailAddress"] = req.Email
 	}
 
+	// Call Namecheap API to register domain
 	var result struct {
 		XMLName         xml.Name `xml:"ApiResponse"`
 		Status          string   `xml:"Status,attr"`
@@ -63,36 +65,54 @@ func BuyDomain(client *namecheap.Client, req model.DomainPurchaseRequest) (bool,
 	if err != nil {
 		return false, "", fmt.Errorf("API error: %v", err)
 	}
-
 	if result.Status == "ERROR" {
 		return false, "", fmt.Errorf("Namecheap Error: %s", result.Errors.Error)
 	}
 
 	domainName := result.CommandResponse.DomainCreateResult.Domain
+	if domainName == "" {
+		domainName = req.Domain
+	}
 
+	// After domain is registered
 	if result.CommandResponse.DomainCreateResult.Registered {
-		aRecord := req.ARecord
-		if aRecord == "" {
-			aRecord = "82.25.106.75"
-		}
-		cName := req.CName
-		if cName == "" {
-			cName = "indigo-spoonbill-233511.hostingersite.com"
+		// Step 1: Prepare DNS records
+		records := req.DNSRecords
+		if len(records) == 0 {
+			records = []model.DNSInputRecord{
+				{Type: "A", Host: "@", Value: "82.25.106.75", TTL: 1800},
+				{Type: "CNAME", Host: "www", Value: "indigo-spoonbill-233511.hostingersite.com", TTL: 1800},
+			}
 		}
 
-		if err := SetDNSRecords(client, req.Domain, aRecord, cName); err != nil {
+		// Step 2: Setup DNS records in Namecheap
+		if err := SetDNSRecordsAdvanced(client, domainName, records); err != nil {
 			return true, domainName, fmt.Errorf("domain registered but DNS setup failed: %v", err)
 		}
+		var dbRecords []model.DNSRecord
+		for _, r := range records {
+			dbRecords = append(dbRecords, model.DNSRecord{
+				Type:   r.Type,
+				Host:   r.Host,
+				Value:  r.Value,
+				TTL:    r.TTL,
+				MXPref: r.MXPref,
+				Flag:   r.Flag,
+				Tag:    r.Tag,
+			})
+		}
 
-		if err := SaveDomainWithDNS(domainName, req.FirstName+" "+req.LastName, aRecord, cName, req.Price, req.Tax, req.Total); err != nil {
+		// Step 3: Save to PostgreSQL
+		if err := SaveDomainWithDNS(domainName, req.FirstName+" "+req.LastName, dbRecords, req.Price, req.Tax, req.Total); err != nil {
 			return true, domainName, fmt.Errorf("DNS set but DB save failed: %v", err)
 		}
 	}
 
+	// Final result
 	return result.CommandResponse.DomainCreateResult.Registered, domainName, nil
 }
 
-func SaveDomainWithDNS(domainName string, customer string, aRecord string, cname string, price float64, tax float64, total float64) error {
+func SaveDomainWithDNS(domainName string, customer string, records []model.DNSRecord, price float64, tax float64, total float64) error {
 	// Create domain purchase object
 	domain := model.DomainPurchase{
 		Name:      domainName,
@@ -103,12 +123,6 @@ func SaveDomainWithDNS(domainName string, customer string, aRecord string, cname
 		Total:     total,
 	}
 
-	// Create DNS record object
-	dns := model.DNSRecord{
-		ARecord: aRecord,
-		CName:   cname,
-	}
-
 	// Save both in a transaction
 	tx := database.DB.Begin()
 
@@ -117,10 +131,13 @@ func SaveDomainWithDNS(domainName string, customer string, aRecord string, cname
 		return err
 	}
 
-	dns.DomainPurchaseID = domain.ID
-	if err := tx.Create(&dns).Error; err != nil {
-		tx.Rollback()
-		return err
+	// Set the foreign key and insert records
+	for i := range records {
+		records[i].DomainPurchaseID = domain.ID
+		if err := tx.Create(&records[i]).Error; err != nil {
+			tx.Rollback()
+			return err
+		}
 	}
 
 	return tx.Commit().Error

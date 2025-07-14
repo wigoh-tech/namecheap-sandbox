@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"namecheap-microservice/config"
+	"namecheap-microservice/model"
+	"strconv"
 
 	"github.com/namecheap/go-namecheap-sdk/v2/namecheap"
 )
@@ -84,8 +86,7 @@ func CheckDomain(client *namecheap.Client, domain string) (bool, error) {
 
 	return available, nil
 }
-
-func SetDNSRecords(client *namecheap.Client, domain string, aRecord string, cname string) error {
+func SetDNSRecordsAdvanced(client *namecheap.Client, domain string, records []model.DNSInputRecord) error {
 	parts := strings.SplitN(domain, ".", 2)
 	if len(parts) != 2 {
 		return fmt.Errorf("invalid domain format: %s", domain)
@@ -103,37 +104,34 @@ func SetDNSRecords(client *namecheap.Client, domain string, aRecord string, cnam
 		"TLD":      tld,
 	}
 
-	recordIndex := 1
-	addedRecord := false
+	// 🧾 Log the incoming DNS records
+	fmt.Println("🟡 Preparing DNS Records for:", domain)
+	for i, rec := range records {
+		n := i + 1
+		params[fmt.Sprintf("HostName%d", n)] = rec.Host
+		params[fmt.Sprintf("RecordType%d", n)] = rec.Type
+		params[fmt.Sprintf("Address%d", n)] = rec.Value
+		params[fmt.Sprintf("TTL%d", n)] = strconv.Itoa(rec.TTL)
 
-	if strings.TrimSpace(aRecord) != "" {
-		if !strings.Contains(aRecord, ".") {
-			return fmt.Errorf("invalid A record IP address: %s", aRecord)
+		if rec.Type == "MX" {
+			params[fmt.Sprintf("MXPref%d", n)] = strconv.Itoa(rec.MXPref)
 		}
-		params[fmt.Sprintf("HostName%d", recordIndex)] = "@"
-		params[fmt.Sprintf("RecordType%d", recordIndex)] = "A"
-		params[fmt.Sprintf("Address%d", recordIndex)] = aRecord
-		params[fmt.Sprintf("TTL%d", recordIndex)] = "1800"
-		recordIndex++
-		addedRecord = true
-	}
-
-	if strings.TrimSpace(cname) != "" {
-		if !strings.Contains(cname, ".") {
-			return fmt.Errorf("invalid CNAME host: %s", cname)
+		if rec.Type == "CAA" {
+			params[fmt.Sprintf("Flag%d", n)] = strconv.Itoa(rec.Flag)
+			params[fmt.Sprintf("Tag%d", n)] = rec.Tag
 		}
-		params[fmt.Sprintf("HostName%d", recordIndex)] = "www"
-		params[fmt.Sprintf("RecordType%d", recordIndex)] = "CNAME"
-		params[fmt.Sprintf("Address%d", recordIndex)] = cname
-		params[fmt.Sprintf("TTL%d", recordIndex)] = "1800"
-		addedRecord = true
+
+		fmt.Printf("🔧 Record %d: Host=%s | Type=%s | Value=%s | TTL=%d\n", n, rec.Host, rec.Type, rec.Value, rec.TTL)
 	}
 
-	if !addedRecord {
-		return fmt.Errorf("no valid records to update (A: '%s', CNAME: '%s')", aRecord, cname)
+	// ✅ Log final API parameters
+	fmt.Println("🌐 DNS API Params being sent to Namecheap:")
+	for k, v := range params {
+		if strings.HasPrefix(k, "ApiKey") {
+			v = "*****" // hide secret
+		}
+		fmt.Printf("   %s: %s\n", k, v)
 	}
-
-	fmt.Println("🔧 DNS Params:", params)
 
 	var response struct {
 		XMLName xml.Name `xml:"ApiResponse"`
@@ -148,15 +146,17 @@ func SetDNSRecords(client *namecheap.Client, domain string, aRecord string, cnam
 
 	_, err := client.DoXML(params, &response)
 	if err != nil {
+		fmt.Println("❌ API call failed:", err)
 		return fmt.Errorf("API call failed: %v", err)
 	}
 
 	if response.Status == "ERROR" {
+		fmt.Println("🟥 Namecheap API Error:", response.Errors.Error)
 		return fmt.Errorf("Namecheap error: %s", response.Errors.Error)
 	}
-
 	if !response.CommandResponse.IsSuccess {
-		return fmt.Errorf("DNS update failed, unknown reason")
+		fmt.Println("❌ DNS update failed (Namecheap returned IsSuccess=false)")
+		return fmt.Errorf("DNS update failed")
 	}
 
 	fmt.Println("✅ DNS records successfully set for", domain)

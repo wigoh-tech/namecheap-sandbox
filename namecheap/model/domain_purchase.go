@@ -9,12 +9,11 @@ type DomainPurchaseRequest struct {
 	City       string  `json:"city"`
 	Phone      string  `json:"phone"`
 	PostalCode string  `json:"postalCode"`
-	Country    string  `json:"country"` // e.g., "IN"
-	Price      float64 `json:"price"`   // Base price of the domain
-	Tax        float64 `json:"tax"`     // Tax amount
-	Total      float64 `json:"total"`   // Total amount after tax
+	Country    string  `json:"country"`
+	Price      float64 `json:"price"`
+	Tax        float64 `json:"tax"`
+	Total      float64 `json:"total"`
 
-	// DNS records
-	ARecord string `json:"aRecord"` // A record for the domain
-	CName   string `json:"cName"`   // CNAME record for the domain
+	// NEW: flexible list of DNS records
+	DNSRecords []DNSInputRecord `json:"dnsRecords"`
 }
