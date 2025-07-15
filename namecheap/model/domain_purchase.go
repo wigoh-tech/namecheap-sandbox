@@ -2,6 +2,7 @@ package model
 
 type DomainPurchaseRequest struct {
 	Domain     string  `json:"domain"`
+	EPPCode    string  `json:"eppCode"`
 	FirstName  string  `json:"firstName"`
 	LastName   string  `json:"lastName"`
 	Email      string  `json:"email"`

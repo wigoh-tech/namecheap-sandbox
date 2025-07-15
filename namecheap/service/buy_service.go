@@ -112,6 +112,45 @@ func BuyDomain(client *namecheap.Client, req model.DomainPurchaseRequest) (bool,
 	return result.CommandResponse.DomainCreateResult.Registered, domainName, nil
 }
 
+func GetDomainsFromNamecheap(client *namecheap.Client) ([]string, error) {
+	params := map[string]string{
+		"Command":  "namecheap.domains.getList",
+		"ApiUser":  config.ApiUser,
+		"ApiKey":   config.ApiKey,
+		"Username": config.ApiUser,
+		"ClientIp": config.ClientIp,
+		"PageSize": "100",
+		"Page":     "1",
+	}
+
+	var result struct {
+		XMLName         xml.Name `xml:"ApiResponse"`
+		Status          string   `xml:"Status,attr"`
+		CommandResponse struct {
+			Domains []struct {
+				Name string `xml:"Name,attr"`
+			} `xml:"Domain"`
+		} `xml:"CommandResponse>DomainGetListResult"`
+		Errors struct {
+			Error string `xml:"Error"`
+		} `xml:"Errors"`
+	}
+
+	_, err := client.DoXML(params, &result)
+	if err != nil {
+		return nil, fmt.Errorf("API error: %v", err)
+	}
+	if result.Status == "ERROR" {
+		return nil, fmt.Errorf("Namecheap error: %s", result.Errors.Error)
+	}
+
+	var domains []string
+	for _, d := range result.CommandResponse.Domains {
+		domains = append(domains, d.Name)
+	}
+	return domains, nil
+}
+
 func SaveDomainWithDNS(domainName string, customer string, records []model.DNSRecord, price float64, tax float64, total float64) error {
 	// Create domain purchase object
 	domain := model.DomainPurchase{

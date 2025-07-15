@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"namecheap-microservice/config"
-	database "namecheap-microservice/database"
+	"namecheap-microservice/database"
 	"namecheap-microservice/routes"
 )
 

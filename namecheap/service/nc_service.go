@@ -86,6 +86,104 @@ func CheckDomain(client *namecheap.Client, domain string) (bool, error) {
 
 	return available, nil
 }
+func GetRegistrarLockStatus(client *namecheap.Client, domain string) (bool, error) {
+	params := map[string]string{
+		"Command":    "namecheap.domains.getRegistrarLock",
+		"ApiUser":    config.ApiUser,
+		"ApiKey":     config.ApiKey,
+		"Username":   config.ApiUser,
+		"ClientIp":   config.ClientIp,
+		"DomainName": domain, // ✅ Namecheap requires this
+	}
+
+	// 🔍 Debug logging — check if DomainName is being passed
+	fmt.Println("📦 Params being sent to Namecheap:")
+	for k, v := range params {
+		if k == "ApiKey" {
+			v = "*****"
+		}
+		fmt.Printf("   %s: %s\n", k, v)
+	}
+
+	var result struct {
+		XMLName         xml.Name `xml:"ApiResponse"`
+		Status          string   `xml:"Status,attr"`
+		CommandResponse struct {
+			RegistrarLockStatus string `xml:"RegistrarLockStatus"`
+		} `xml:"CommandResponse>DomainGetRegistrarLockResult"`
+		Errors struct {
+			Error string `xml:"Error"`
+		} `xml:"Errors"`
+	}
+
+	// 📡 Call Namecheap with those params
+	_, err := client.DoXML(params, &result)
+	if err != nil {
+		return false, fmt.Errorf("API call failed: %v", err)
+	}
+	if result.Status == "ERROR" {
+		return false, fmt.Errorf("Namecheap error: %s", result.Errors.Error)
+	}
+
+	// ✅ Parse status
+	locked := strings.ToLower(result.CommandResponse.RegistrarLockStatus) == "true"
+	return locked, nil
+}
+
+func SetRegistrarLock(client *namecheap.Client, domain string, lock bool) error {
+	parts := strings.SplitN(domain, ".", 2)
+	if len(parts) != 2 {
+		return fmt.Errorf("invalid domain format")
+	}
+	sld, tld := parts[0], parts[1]
+
+	value := "UNLOCK"
+	if lock {
+		value = "LOCK"
+	}
+	params := map[string]string{
+		"Command":    "namecheap.domains.setRegistrarLock",
+		"ApiUser":    config.ApiUser,
+		"ApiKey":     config.ApiKey,
+		"Username":   config.ApiUser,
+		"ClientIp":   config.ClientIp,
+		"DomainName": domain,
+		"SLD":        sld,
+		"TLD":        tld,
+		"LockAction": value,
+	}
+
+	if lock {
+		params["LockAction"] = "LOCK"
+	}
+
+	// Debug log
+	fmt.Println("🔐 LockAction being sent:", params["LockAction"])
+
+	var result struct {
+		XMLName xml.Name `xml:"ApiResponse"`
+		Status  string   `xml:"Status,attr"`
+		Errors  struct {
+			Error string `xml:"Error"`
+		} `xml:"Errors"`
+		CommandResponse struct {
+			IsSuccess bool `xml:"IsSuccess,attr"`
+		} `xml:"CommandResponse>DomainSetRegistrarLockResult"`
+	}
+
+	_, err := client.DoXML(params, &result)
+	if err != nil {
+		return err
+	}
+	if result.Status == "ERROR" {
+		return fmt.Errorf("Namecheap error: %s", result.Errors.Error)
+	}
+	if !result.CommandResponse.IsSuccess {
+		return fmt.Errorf("Failed to change lock state")
+	}
+	return nil
+}
+
 func SetDNSRecordsAdvanced(client *namecheap.Client, domain string, records []model.DNSInputRecord) error {
 	parts := strings.SplitN(domain, ".", 2)
 	if len(parts) != 2 {

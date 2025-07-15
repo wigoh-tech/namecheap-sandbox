@@ -59,6 +59,42 @@ func CheckDomainHandler(w http.ResponseWriter, r *http.Request) {
 		"available": available,
 	})
 }
+func GetRegistrarLockHandler(w http.ResponseWriter, r *http.Request) {
+	domain := r.URL.Query().Get("domain")
+	if domain == "" {
+		http.Error(w, `{"error":"domain required"}`, http.StatusBadRequest)
+		return
+	}
+	client := service.NewNamecheapClient()
+	status, err := service.GetRegistrarLockStatus(client, domain)
+	if err != nil {
+		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]bool{
+		"locked": status,
+	})
+}
+func SetRegistrarLockHandler(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Domain string `json:"domain"`
+		Lock   bool   `json:"lock"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Domain == "" {
+		http.Error(w, `{"error":"invalid request"}`, http.StatusBadRequest)
+		return
+	}
+
+	client := service.NewNamecheapClient()
+	if err := service.SetRegistrarLock(client, body.Domain, body.Lock); err != nil {
+		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]string{
+		"message": "Registrar lock updated successfully",
+	})
+}
 
 func BuyDomainHandler(w http.ResponseWriter, r *http.Request) {
 	var req model.DomainPurchaseRequest
@@ -137,17 +173,30 @@ func GetDomainPriceHandler(w http.ResponseWriter, r *http.Request) {
 		"total": total,
 	})
 }
-func ListDomains(w http.ResponseWriter, r *http.Request) {
-	var domains []model.DomainPurchase
-	if err := database.DB.Preload("DNSRecords").Find(&domains).Error; err != nil {
-		http.Error(w, `{"error": "failed to fetch domains"}`, http.StatusInternalServerError)
+func GetLiveDomainsHandler(w http.ResponseWriter, r *http.Request) {
+	client := service.NewNamecheapClient()
+	domains, err := service.GetDomainsFromNamecheap(client)
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error": "%s"}`, err.Error()), http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(domains)
+}
+func GetTLDListHandler(w http.ResponseWriter, r *http.Request) {
+	client := service.NewNamecheapClient()
+
+	tlds, err := service.GetTLDList(client)
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error": "%s"}`, err.Error()), http.StatusInternalServerError)
+		return
+	}
+
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"domains": domains,
+		"success": true,
+		"tlds":    tlds,
 	})
 }
+
 func RevokeDomainHandler(w http.ResponseWriter, r *http.Request) {
 	// Read raw body
 	bodyBytes, _ := io.ReadAll(r.Body)
