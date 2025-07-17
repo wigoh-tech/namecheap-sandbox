@@ -21,5 +21,6 @@ func SetupRoutes() {
 	http.HandleFunc("/api/transfer-domain", controller.TransferDomainHandler)
 	http.HandleFunc("/api/transfer-list", controller.GetTransferListHandler)
 	http.HandleFunc("/api/transfer-status", controller.GetTransferStatusHandler)
+	http.HandleFunc(("/api/reactivate-domain"), middleware.CORSMiddleware(controller.ReactivateDomainHandler))
 
 }

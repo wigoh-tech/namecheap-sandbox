@@ -196,6 +196,49 @@ func GetTLDListHandler(w http.ResponseWriter, r *http.Request) {
 		"tlds":    tlds,
 	})
 }
+func ReactivateDomainHandler(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Domain string `json:"domain"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Domain == "" {
+		http.Error(w, `{"error":"Missing domain"}`, http.StatusBadRequest)
+		return
+	}
+
+	client := service.NewNamecheapClient()
+	ok, err := service.ReactivateDomain(client, body.Domain)
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]any{
+		"success": ok,
+		"message": fmt.Sprintf("Domain %s reactivated", body.Domain),
+	})
+}
+func RenewDomainHandler(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Domain string `json:"domain"`
+		Years  int    `json:"years"` // Optional
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Domain == "" {
+		http.Error(w, `{"error":"Missing domain or invalid body"}`, http.StatusBadRequest)
+		return
+	}
+
+	client := service.NewNamecheapClient()
+	ok, err := service.RenewDomain(client, body.Domain, body.Years)
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":"%s"}`, err.Error()), http.StatusInternalServerError)
+		return
+	}
+
+	json.NewEncoder(w).Encode(map[string]any{
+		"success": ok,
+		"message": fmt.Sprintf("Domain %s renewed successfully", body.Domain),
+	})
+}
 
 func RevokeDomainHandler(w http.ResponseWriter, r *http.Request) {
 	// Read raw body

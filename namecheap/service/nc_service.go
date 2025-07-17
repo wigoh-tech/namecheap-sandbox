@@ -9,6 +9,8 @@ import (
 	"namecheap-microservice/model"
 	"strconv"
 
+	"github.com/shopspring/decimal"
+
 	"github.com/namecheap/go-namecheap-sdk/v2/namecheap"
 )
 
@@ -182,6 +184,102 @@ func SetRegistrarLock(client *namecheap.Client, domain string, lock bool) error 
 		return fmt.Errorf("Failed to change lock state")
 	}
 	return nil
+}
+func ReactivateDomain(client *namecheap.Client, domain string) (bool, error) {
+	params := map[string]string{
+		"Command":    "namecheap.domains.reactivate",
+		"ApiUser":    config.ApiUser,
+		"ApiKey":     config.ApiKey,
+		"Username":   config.ApiUser,
+		"ClientIp":   config.ClientIp,
+		"DomainName": domain, // ✅ Namecheap requires this
+	}
+	var result struct {
+		XMLName xml.Name `xml:"ApiResponse"`
+		Status  string   `xml:"Status,attr"`
+		Errors  struct {
+			Error string `xml:"Error"`
+		} `xml:"Errors"`
+		CommandResponse struct {
+			DomainReactivateResult struct {
+				Domain        string          `xml:"Domain,attr"`
+				IsSuccess     bool            `xml:"IsSuccess,attr"`
+				ChargedAmount decimal.Decimal `xml:"ChargedAmount,attr"`
+				OrderID       int64           `xml:"OrderID,attr"`
+			} `xml:"DomainReactivateResult"`
+		} `xml:"CommandResponse"`
+	}
+
+	_, err := client.DoXML(params, &result)
+	if err != nil {
+		return false, fmt.Errorf("API call failed: %v", err)
+	}
+
+	if result.Status == "ERROR" {
+		return false, fmt.Errorf("Namecheap error: %s", result.Errors.Error)
+	}
+
+	if !result.CommandResponse.DomainReactivateResult.IsSuccess {
+		return false, fmt.Errorf("Failed to reactivate domain: %s", domain)
+	}
+
+	fmt.Printf("✅ Domain %s reactivated. Charged: %s\n", domain, result.CommandResponse.DomainReactivateResult.ChargedAmount.String())
+	return true, nil
+}
+func RenewDomain(client *namecheap.Client, domain string, years int) (bool, error) {
+	if !strings.Contains(domain, ".") {
+		return false, fmt.Errorf("invalid domain format")
+	}
+	if years <= 0 {
+		years = 1 // Default to 1 year
+	}
+
+	params := map[string]string{
+		"Command":    "namecheap.domains.renew",
+		"ApiUser":    config.ApiUser,
+		"ApiKey":     config.ApiKey,
+		"Username":   config.ApiUser,
+		"ClientIp":   config.ClientIp,
+		"DomainName": domain,
+		"Years":      fmt.Sprintf("%d", years),
+	}
+
+	var result struct {
+		XMLName xml.Name `xml:"ApiResponse"`
+		Status  string   `xml:"Status,attr"`
+		Errors  struct {
+			Error string `xml:"Error"`
+		} `xml:"Errors"`
+		CommandResponse struct {
+			RenewResult struct {
+				Domain        string          `xml:"Domain,attr"`
+				ChargedAmount decimal.Decimal `xml:"ChargedAmount,attr"`
+				OrderID       int64           `xml:"OrderID,attr"`
+				Renew         bool            `xml:"Renew",attr`
+			} `xml:"DomainRenewResult"`
+		} `xml:"CommandResponse"`
+	}
+
+	_, err := client.DoXML(params, &result)
+	if err != nil {
+		return false, fmt.Errorf("API call failed: %v", err)
+	}
+
+	if result.Status == "ERROR" {
+		return false, fmt.Errorf("Namecheap error: %s", result.Errors.Error)
+	}
+
+	if !result.CommandResponse.RenewResult.Renew {
+		return false, fmt.Errorf("Failed to renew domain: %s", domain)
+	}
+
+	fmt.Printf("✅ Renewed %s for %d year(s). Charged: %s\n",
+		result.CommandResponse.RenewResult.Domain,
+		years,
+		result.CommandResponse.RenewResult.ChargedAmount.String(),
+	)
+
+	return true, nil
 }
 
 func SetDNSRecordsAdvanced(client *namecheap.Client, domain string, records []model.DNSInputRecord) error {
