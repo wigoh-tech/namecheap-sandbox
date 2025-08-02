@@ -1,6 +1,7 @@
 import { Globe, ShoppingCart, List, Settings } from 'lucide-react';
 import { Link, useLocation } from 'react-router-dom';
-import clsx from 'clsx';
+import {clsx} from 'clsx'; // ✅ Fixed for CommonJS export
+
 
 const navItems = [
   { name: "Check Domain", path: "/check", icon: <Globe /> },
@@ -17,16 +18,17 @@ export default function Sidebar() {
       <h1 className="text-2xl font-bold mb-6">📦 Domain Panel</h1>
       {navItems.map(item => (
         <Link
-          key={item.name}
-          to={item.path}
-          className={clsx(
-            "flex items-center gap-3 p-2 rounded hover:bg-gray-700 transition",
-            location.pathname === item.path && "bg-gray-700"
-          )}
-        >
-          {item.icon}
-          {item.name}
-        </Link>
+  key={item.name}
+  to={item.path}
+  className={clsx(
+    "flex items-center gap-3 p-2 rounded hover:bg-gray-700 transition",
+    location.pathname === item.path && "bg-gray-700"
+  )}
+>
+  {item.icon}
+  {item.name}
+</Link>
+
       ))}
     </aside>
   );

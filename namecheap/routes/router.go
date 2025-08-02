@@ -14,12 +14,12 @@ func SetupRoutes() {
 	http.HandleFunc("/revoke-domain", middleware.CORSMiddleware(controller.RevokeDomainHandler))
 
 	http.HandleFunc(("/api/update-dns"), middleware.CORSMiddleware(controller.UpdateDNSHandler))
-	http.HandleFunc("/api/add-dns-record", controller.AddDNSRecordHandler)
-	http.HandleFunc("/api/registrar-lock", controller.GetRegistrarLockHandler)
-	http.HandleFunc("/api/set-registrar-lock", controller.SetRegistrarLockHandler)
-	http.HandleFunc("/api/tld-list", controller.GetTLDListHandler)
-	http.HandleFunc("/api/transfer-domain", controller.TransferDomainHandler)
-	http.HandleFunc("/api/transfer-list", controller.GetTransferListHandler)
+	http.HandleFunc("/api/add-dns-record", middleware.CORSMiddleware(controller.AddDNSRecordHandler))
+	http.HandleFunc("/api/registrar-lock", middleware.CORSMiddleware(controller.GetRegistrarLockHandler))
+	http.HandleFunc("/api/set-registrar-lock", middleware.CORSMiddleware(controller.SetRegistrarLockHandler))
+	http.HandleFunc("/api/tld-list", middleware.CORSMiddleware(controller.GetTLDListHandler))
+	http.HandleFunc("/api/transfer-domain", middleware.CORSMiddleware(controller.TransferDomainHandler))
+	http.HandleFunc("/api/transfer-list", middleware.CORSMiddleware(controller.GetTransferListHandler))
 	http.HandleFunc("/api/transfer-status", controller.GetTransferStatusHandler)
 	http.HandleFunc(("/api/reactivate-domain"), middleware.CORSMiddleware(controller.ReactivateDomainHandler))
 

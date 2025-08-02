@@ -158,12 +158,18 @@ func GetDomainPriceHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	tld := parts[len(parts)-1]
-	base, ok := service.TLDBasePrices[tld]
-	if !ok {
-		base = 1000.00 // fallback
+	client := service.NewNamecheapClient()
+
+	// 🔁 Get the latest wholesale price in USD
+	wholesaleUSD, err := service.GetWholesalePrice(client, tld)
+	if err != nil {
+		http.Error(w, `{"error": "failed to fetch price from Namecheap"}`, http.StatusInternalServerError)
+		return
 	}
 
-	tax := base * 0.3
+	const exchangeRate = 83.0
+	base := wholesaleUSD * exchangeRate
+	tax := base * 0.18
 	total := base + tax
 
 	w.Header().Set("Content-Type", "application/json")
@@ -173,15 +179,20 @@ func GetDomainPriceHandler(w http.ResponseWriter, r *http.Request) {
 		"total": total,
 	})
 }
+
 func GetLiveDomainsHandler(w http.ResponseWriter, r *http.Request) {
-	client := service.NewNamecheapClient()
-	domains, err := service.GetDomainsFromNamecheap(client)
-	if err != nil {
+	var domains []model.DomainPurchase
+
+	// Preload DNS records to include them in the response
+	if err := database.DB.Preload("DNSRecords").Find(&domains).Error; err != nil {
 		http.Error(w, fmt.Sprintf(`{"error": "%s"}`, err.Error()), http.StatusInternalServerError)
 		return
 	}
+
+	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(domains)
 }
+
 func GetTLDListHandler(w http.ResponseWriter, r *http.Request) {
 	client := service.NewNamecheapClient()
 

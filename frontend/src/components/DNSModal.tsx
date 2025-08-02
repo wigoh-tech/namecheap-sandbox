@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 
 interface FormState {
   domain: string;
@@ -8,8 +8,11 @@ interface FormState {
   ttl: number;
 }
 
-export default function EditDNSModal() {
+type Mode = "edit" | "add";
+
+export default function DNSModal() {
   const [visible, setVisible] = useState(false);
+  const [mode, setMode] = useState<Mode>("edit");
   const [form, setForm] = useState<FormState>({
     domain: "",
     recordType: "A",
@@ -18,56 +21,83 @@ export default function EditDNSModal() {
     ttl: 1800,
   });
 
-  // Listen for custom 'editDNS' event to populate modal
   useEffect(() => {
-    const handler = (e: CustomEvent<any>) => {
+    const editHandler = (e: CustomEvent) => {
       const d = e.detail;
+      if (!d.name) return alert("Missing domain name");
+      setMode("edit");
       setForm({
         domain: d.name,
         recordType: "A",
         host: "@",
-        value: d.aRecord || d.cname || "82.25.106.75", // fallback
+        value: "",
         ttl: 1800,
       });
       setVisible(true);
     };
-    window.addEventListener("editDNS", handler as any);
-    return () => window.removeEventListener("editDNS", handler as any);
+
+    const addHandler = (e: CustomEvent) => {
+      const d = e.detail;
+      if (!d.name) return alert("Missing domain name");
+      setMode("add");
+      setForm({
+        domain: d.name,
+        recordType: "A",
+        host: "@",
+        value: "",
+        ttl: 1800,
+      });
+      setVisible(true);
+    };
+
+    window.addEventListener("editDNS", editHandler as EventListener);
+    window.addEventListener("addDNS", addHandler as EventListener);
+    return () => {
+      window.removeEventListener("editDNS", editHandler as EventListener);
+      window.removeEventListener("addDNS", addHandler as EventListener);
+    };
   }, []);
 
-  // Close on ESC
   useEffect(() => {
-    const escHandler = (e: KeyboardEvent) => {
+    const esc = (e: KeyboardEvent) => {
       if (e.key === "Escape") setVisible(false);
     };
-    window.addEventListener("keydown", escHandler);
-    return () => window.removeEventListener("keydown", escHandler);
+    window.addEventListener("keydown", esc);
+    return () => window.removeEventListener("keydown", esc);
   }, []);
 
   const handleSubmit = async () => {
-    console.log("🧾 Sending form:", form);
-
     if (!form.domain || !form.host || !form.value || !form.recordType) {
       alert("All fields are required.");
       return;
     }
 
-    const res = await fetch("http://localhost:8080/api/update-dns", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(form),
-    });
+    const url =
+      mode === "add"
+        ? "http://localhost:8080/api/add-dns-record"
+        : "http://localhost:8080/api/update-dns";
 
-    const text = await res.text();
-    if (!res.ok) {
-      console.error("❌ Failed:", res.status, text);
-      alert("DNS update failed: " + text);
-      return;
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+
+      const text = await res.text();
+
+      if (!res.ok) {
+        alert("Failed: " + text);
+        return;
+      }
+
+      console.log("✅ Success:", text);
+      setVisible(false);
+      window.dispatchEvent(new Event("refreshDomains"));
+    } catch (err) {
+      console.error("❌ Error:", err);
+      alert("Network or server error.");
     }
-
-    console.log("✅ Success:", text);
-    setVisible(false);
-    window.dispatchEvent(new Event("refreshDomains"));
   };
 
   if (!visible) return null;
@@ -76,7 +106,8 @@ export default function EditDNSModal() {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 backdrop-blur-sm">
       <div className="bg-white rounded-lg p-6 shadow-lg w-full max-w-md">
         <h2 className="text-xl font-bold mb-4 text-gray-800">
-          Edit DNS for <span className="text-blue-600">{form.domain}</span>
+          {mode === "add" ? "Add" : "Edit"} DNS for{" "}
+          <span className="text-blue-600">{form.domain}</span>
         </h2>
 
         <div className="space-y-3">
@@ -137,9 +168,8 @@ export default function EditDNSModal() {
             <button
               onClick={handleSubmit}
               className="px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded"
-              disabled={!form.value}
             >
-              Update DNS
+              {mode === "add" ? "Add DNS Record" : "Update DNS"}
             </button>
           </div>
         </div>

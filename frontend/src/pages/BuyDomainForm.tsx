@@ -1,16 +1,13 @@
 import { useState } from "react";
+import { useDomain } from "../context/DomainContext"; // 👈 import
 
 type Props = {
-  domain: string;
-  price: {
-    base: number;
-    tax: number;
-    total: number;
-  };
   onSuccess: () => void;
 };
 
-export default function BuyDomainForm({ domain, price, onSuccess }: Props) {
+export default function BuyDomainForm({ onSuccess }: Props) {
+  const { selectedDomain: domain, price } = useDomain(); // 👈 get domain and price
+
   const [formData, setFormData] = useState({
     firstName: "",
     lastName: "",
